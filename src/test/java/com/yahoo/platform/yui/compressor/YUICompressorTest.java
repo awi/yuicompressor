@@ -16,11 +16,11 @@ class YUICompressorTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"_munge.js", "_string_combo.js", "_string_combo2.js", "_string_combo3.js",
+    @ValueSource(strings = {"00_crash.js", "01_prototype.js", "_munge.js", "_string_combo.js", "_string_combo2.js", "_string_combo3.js",
             "_syntax_error.js", "float.js", "issue86.js", "jquery-1.6.4.js", "promise-catch-finally-issue203.js"})
     public void testCase(String filename) throws IOException {
         var file = "src/test/resources/" + filename;
-        var result = YUICompressor.main(new String[]{"-t", file});
+        var result = YUICompressor.mainInternal(new String[]{"-t", file});
         assertEquals(readFile(file + ".min"), result, filename);
     }
 }

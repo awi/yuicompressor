@@ -17,8 +17,23 @@ import java.nio.charset.Charset;
 
 public class YUICompressor {
 
-    public static String main(String args[]) {
+    /**
+     * The entrypoint if called from external (eg. CLI or Maven)
+     *
+     * @param args the argument to YUICompressor as defined in method usage
+     */
+    public static void main(String args[]) {
+        mainInternal(args);
+    }
 
+    /**
+     * This is used by the test cases and returns the minified
+     * js or css, if the parameter -t is passed.
+     *
+     * @param args the argument to YUICompressor as defined in method usage
+     * @return the minified file, if -t is passed via args
+     */
+    public static String mainInternal(String args[]) {
         CmdLineParser parser = new CmdLineParser();
         CmdLineParser.Option typeOpt = parser.addStringOption("type");
         CmdLineParser.Option versionOpt = parser.addBooleanOption('V', "version");
@@ -114,14 +129,14 @@ public class YUICompressor {
 
             String output = (String) parser.getOptionValue(outputFilenameOpt);
             String pattern[];
-            if(output == null) {
+            if (output == null) {
                 pattern = new String[0];
-            } else if (output.matches("(?i)^[a-z]\\:\\\\.*")){ // if output is with something like c:\ dont split it
+            } else if (output.matches("(?i)^[a-z]\\:\\\\.*")) { // if output is with something like c:\ dont split it
                 pattern = new String[]{output};
             } else {
                 pattern = output.split(":");
             }
-            
+
             try {
                 String mungemapFilename = (String) parser.getOptionValue(mungemapFilenameOpt);
                 if (mungemapFilename != null) {
@@ -133,7 +148,7 @@ public class YUICompressor {
             }
 
             java.util.Iterator filenames = files.iterator();
-            while(filenames.hasNext()) {
+            while (filenames.hasNext()) {
                 String inputFilename = (String) filenames.next();
                 String type = null;
                 try {
@@ -271,7 +286,7 @@ public class YUICompressor {
             usage();
             System.exit(1);
         } finally {
-            if (mungemap !=null) {
+            if (mungemap != null) {
                 try {
                     mungemap.close();
                 } catch (IOException e) {
@@ -290,6 +305,7 @@ public class YUICompressor {
     private static void version() {
         System.err.println("@VERSION@");
     }
+
     private static void usage() {
         System.err.println(
                 "YUICompressor Version: @VERSION@\n"

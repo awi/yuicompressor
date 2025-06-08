@@ -71,15 +71,20 @@
             </plugin>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.yahoo.platform.yui.compressor.Bootstrap</mainClass>
+                            <mainClass>com.yahoo.platform.yui.compressor.YUICompressor</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
+                    <!-- This is needed to overwrite some org.mozilla.javascript classes from lib rhino.js-->
+                    <archiverConfig>
+                        <duplicateBehavior>add</duplicateBehavior>
+                    </archiverConfig>
                 </configuration>
             </plugin>
         </plugins>
