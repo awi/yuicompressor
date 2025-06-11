@@ -9,13 +9,20 @@
 package com.yahoo.platform.yui.compressor;
 
 import jargs.gnu.CmdLineParser;
-import org.mozilla.javascript.ErrorReporter;
-import org.mozilla.javascript.EvaluatorException;
 
 import java.io.*;
 import java.nio.charset.Charset;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 
 public class YUICompressor {
+
+    public static final int LENGTH_OF_DIGEST = 6;
 
     /**
      * The entrypoint if called from external (eg. CLI or Maven)
@@ -23,7 +30,12 @@ public class YUICompressor {
      * @param args the argument to YUICompressor as defined in method usage
      */
     public static void main(String args[]) {
-        mainInternal(args);
+
+        try {
+            mainInternal(args);
+        } catch (IllegalArgumentException e) {
+            usage();
+        }
     }
 
     /**
@@ -33,7 +45,7 @@ public class YUICompressor {
      * @param args the argument to YUICompressor as defined in method usage
      * @return the minified file, if -t is passed via args
      */
-    public static String mainInternal(String args[]) {
+    static String mainInternal(String args[]) {
         CmdLineParser parser = new CmdLineParser();
         CmdLineParser.Option typeOpt = parser.addStringOption("type");
         CmdLineParser.Option versionOpt = parser.addBooleanOption('V', "version");
@@ -47,10 +59,12 @@ public class YUICompressor {
         CmdLineParser.Option outputFilenameOpt = parser.addStringOption('o', "output");
         CmdLineParser.Option mungemapFilenameOpt = parser.addStringOption('m', "mungemap");
         CmdLineParser.Option preserveUnknownHintsOpt = parser.addBooleanOption('p', "preservehints");
-        CmdLineParser.Option testModeOpt = parser.addBooleanOption('t', "testmode");
-
+        CmdLineParser.Option testModeOpt = parser.addBooleanOption('t', "test");
+        CmdLineParser.Option digestOpt = parser.addBooleanOption('d', "digest");
 
         Boolean testMode = false;
+        Boolean addDigest = false;
+        MessageDigest digest = getMessageDigest();
         Reader in = null;
         Writer out = null;
         Writer mungemap = null;
@@ -62,6 +76,11 @@ public class YUICompressor {
             testMode = (Boolean) parser.getOptionValue(testModeOpt);
             if (testMode == null) {
                 testMode = false;
+            }
+
+            addDigest = (Boolean) parser.getOptionValue(digestOpt);
+            if (addDigest == null) {
+                addDigest = false;
             }
 
             Boolean help = (Boolean) parser.getOptionValue(helpOpt);
@@ -100,15 +119,13 @@ public class YUICompressor {
                 try {
                     linebreakpos = Integer.parseInt(linebreakstr, 10);
                 } catch (NumberFormatException e) {
-                    usage();
-                    System.exit(1);
+                    throw new IllegalArgumentException("Illegal value for option --line-break");
                 }
             }
 
             String typeOverride = (String) parser.getOptionValue(typeOpt);
             if (typeOverride != null && !typeOverride.equalsIgnoreCase("js") && !typeOverride.equalsIgnoreCase("css")) {
-                usage();
-                System.exit(1);
+                throw new IllegalArgumentException("Missing or illegal value for --type");
             }
 
             boolean munge = parser.getOptionValue(nomungeOpt) == null;
@@ -117,16 +134,23 @@ public class YUICompressor {
             boolean preserveUnknownHints = parser.getOptionValue(preserveUnknownHintsOpt) != null;
 
             String[] fileArgs = parser.getRemainingArgs();
-            java.util.List<String> files = java.util.Arrays.asList(fileArgs);
+            List<String> files = Arrays.asList(fileArgs);
             if (files.isEmpty()) {
                 if (typeOverride == null) {
-                    usage();
-                    System.exit(1);
+                    throw new IllegalArgumentException("Must specify --type when no input file is given (use stdin as input)");
                 }
                 files = new java.util.ArrayList<String>();
                 files.add("-"); // read from stdin
+            } else if (files.size() == 1) {
+                // Check whether the only filename is a directory and collect all files
+                // with the given typeOverride in the directory and all subdirs.
+                Path path = Paths.get(files.get(0));
+                if (Files.isDirectory(path)) {
+                    files = collectFiles(path, typeOverride);
+                }
             }
 
+            // '.css$:-min.css'
             String output = (String) parser.getOptionValue(outputFilenameOpt);
             String pattern[];
             if (output == null) {
@@ -143,14 +167,15 @@ public class YUICompressor {
                     mungemap = new OutputStreamWriter(new FileOutputStream(mungemapFilename), charset);
                 }
             } catch (IOException e) {
-                e.printStackTrace();
-                System.exit(1);
+                throw new RuntimeException(e);
             }
 
             java.util.Iterator filenames = files.iterator();
             while (filenames.hasNext()) {
                 String inputFilename = (String) filenames.next();
+                String outputFilename = null;
                 String type = null;
+
                 try {
                     if (inputFilename.equals("-")) {
                         in = new InputStreamReader(System.in, charset);
@@ -173,72 +198,37 @@ public class YUICompressor {
                         in = new InputStreamReader(new FileInputStream(inputFilename), charset);
                     }
 
-                    String outputFilename = output;
+                    outputFilename = output;
                     // if a substitution pattern was passed in
                     if (pattern.length > 1 && files.size() > 0) {
                         outputFilename = inputFilename.replaceFirst(pattern[0], pattern[1]);
                     }
 
                     if (type.equalsIgnoreCase("js")) {
+                        final String localFilename = inputFilename;
 
-                        try {
-                            final String localFilename = inputFilename;
+                        JavaScriptCompressor compressor = new JavaScriptCompressor(in, new YUIErrorReporter(localFilename));
 
-                            JavaScriptCompressor compressor = new JavaScriptCompressor(in, new ErrorReporter() {
+                        // Close the input stream first, and then open the output stream,
+                        // in case the output file should override the input file.
+                        in.close();
+                        in = null;
 
-                                public void warning(String message, String sourceName,
-                                                    int line, String lineSource, int lineOffset) {
-                                    System.err.println("\n[WARNING] in " + localFilename);
-                                    if (line < 0) {
-                                        System.err.println("  " + message);
-                                    } else {
-                                        System.err.println("  " + line + ':' + lineOffset + ':' + message);
-                                    }
-                                }
-
-                                public void error(String message, String sourceName,
-                                                  int line, String lineSource, int lineOffset) {
-                                    System.err.println("[ERROR] in " + localFilename);
-                                    if (line < 0) {
-                                        System.err.println("  " + message);
-                                    } else {
-                                        System.err.println("  " + line + ':' + lineOffset + ':' + message);
-                                    }
-                                }
-
-                                public EvaluatorException runtimeError(String message, String sourceName,
-                                                                       int line, String lineSource, int lineOffset) {
-                                    error(message, sourceName, line, lineSource, lineOffset);
-                                    return new EvaluatorException(message);
-                                }
-                            });
-
-                            // Close the input stream first, and then open the output stream,
-                            // in case the output file should override the input file.
-                            in.close();
-                            in = null;
-
-                            if (outputFilename == null) {
-                                if (testMode) {
-                                    out = new StringWriter();
-                                } else {
-                                    out = new OutputStreamWriter(System.out, charset);
-                                }
+                        if (outputFilename == null) {
+                            if (testMode) {
+                                out = new StringWriter();
                             } else {
-                                out = new OutputStreamWriter(new FileOutputStream(outputFilename), charset);
-                                if (mungemap != null) {
-                                    mungemap.write("\n\nFile: " + outputFilename + "\n\n");
-                                }
+                                out = new OutputStreamWriter(System.out, charset);
                             }
-
-                            compressor.compress(out, mungemap, linebreakpos, munge, verbose,
-                                    preserveAllSemiColons, disableOptimizations, preserveUnknownHints);
-
-                        } catch (EvaluatorException e) {
-                            e.printStackTrace();
-                            // Return a special error code used specifically by the web front-end.
-                            System.exit(2);
+                        } else {
+                            out = new OutputStreamWriter(new FileOutputStream(outputFilename), charset);
+                            if (mungemap != null) {
+                                mungemap.write("\n\nFile: " + outputFilename + "\n\n");
+                            }
                         }
+
+                        compressor.compress(out, mungemap, linebreakpos, munge, verbose,
+                                preserveAllSemiColons, disableOptimizations, preserveUnknownHints);
 
                     } else if (type.equalsIgnoreCase("css")) {
 
@@ -259,17 +249,13 @@ public class YUICompressor {
                     }
 
                 } catch (IOException e) {
-
-                    e.printStackTrace();
-                    System.exit(1);
-
+                    throw new RuntimeException(e);
                 } finally {
-
                     if (in != null) {
                         try {
                             in.close();
                         } catch (IOException e) {
-                            e.printStackTrace();
+                            throw new RuntimeException(e);
                         }
                     }
 
@@ -277,14 +263,18 @@ public class YUICompressor {
                         try {
                             out.close();
                         } catch (IOException e) {
-                            e.printStackTrace();
+                            throw new RuntimeException(e);
                         }
                     }
                 }
+
+                if (addDigest) {
+                    var newFilename = generateNewFilename(digest, outputFilename);
+                    new File(outputFilename).renameTo(new File(newFilename));
+                }
             }
         } catch (CmdLineParser.OptionException e) {
-            usage();
-            System.exit(1);
+            throw new IllegalArgumentException(e);
         } finally {
             if (mungemap != null) {
                 try {
@@ -300,6 +290,72 @@ public class YUICompressor {
         } else {
             return null;
         }
+    }
+
+    static List<String> collectFiles(Path dir, String type) {
+        if (type == null) {
+            throw new IllegalArgumentException("ERROR: No type override specified when using a directory as input");
+        }
+
+        Iterator<Path> iter;
+        try {
+            iter = Files.newDirectoryStream(dir).iterator();
+
+            FileSystem fs = dir.getFileSystem();
+            final PathMatcher matcher = fs.getPathMatcher("glob:" + "*." + type);
+            DirectoryStream.Filter<Path> filter = entry -> matcher.matches(entry.getFileName());
+
+            var result = new ArrayList<String>();
+
+            while (iter.hasNext()) {
+                var next = iter.next();
+                if (Files.isDirectory(next)) {
+                    result.addAll(collectFiles(next, type));
+                } else {
+                    if (filter.accept(next)) {
+//                        var fn = Path.of(dir.toString(),next.toString());
+                        result.add(next.toString());
+                    }
+                }
+            }
+            return result;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static String generateNewFilename(MessageDigest digest, String outputFilename) {
+        digest.reset();
+
+        byte[] ba = null;
+        try {
+            ba = digest.digest(Files.readString(Paths.get(outputFilename)).getBytes());
+        } catch (IOException e) {
+            System.err.println("Cannot read file " + outputFilename);
+            System.exit(1);
+        }
+
+        // Convert to hex string
+        var sb = new StringBuilder();
+
+        for (byte b : ba) {
+            sb.append(String.format("%02x", b));
+        }
+
+        // Add to filename bfore extension
+        var idxExtension = outputFilename.lastIndexOf('.');
+
+        return outputFilename.substring(0, idxExtension) + "-" + sb.substring(0, LENGTH_OF_DIGEST) + outputFilename.substring(idxExtension);
+    }
+
+    private static MessageDigest getMessageDigest() {
+        try {
+            return MessageDigest.getInstance("MD5");
+        } catch (NoSuchAlgorithmException e) {
+            System.err.println("MessageDigest MD5 not found!");
+            System.exit(1);
+        }
+        return null;
     }
 
     private static void version() {
@@ -321,6 +377,7 @@ public class YUICompressor {
                         + "  -v, --verbose             Display informational messages and warnings\n"
                         + "  -p, --preservehints       Don't elide unrecognized compiler hints (e.g. \"use strict\", \"use asm\")\n"
                         + "  -m <file>                 Place a mapping of munged identifiers to originals in this file\n\n"
+                        + "  -d, --digest              Append a MD5 checksum (abbrev. to first 6 chars) of the file content to the filename"
                         + "  -o <file>                 Place the output into <file>. Defaults to stdout.\n"
                         + "                            Multiple files can be processed using the following syntax:\n"
                         + "                            java -jar yuicompressor.jar -o '.css$:-min.css' *.css\n"

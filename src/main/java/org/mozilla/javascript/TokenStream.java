@@ -162,7 +162,7 @@ class TokenStream
             Id_super         = Token.RESERVED,
             Id_synchronized  = Token.RESERVED,
             Id_throw         = Token.THROW,
-            Id_throws        = Token.RESERVED,
+            Id_throws        = Token.THROWS,
             Id_transient     = Token.RESERVED,
             Id_try           = Token.TRY,
             Id_volatile      = Token.RESERVED;

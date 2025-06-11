@@ -247,7 +247,8 @@ public class Token
         CONDCOMMENT    = 160,  // JScript conditional comment
         KEEPCOMMENT    = 161,  // /*! ... */ comment
 
-        LAST_TOKEN     = 162;
+        LAST_TOKEN     = 162,
+        THROWS = 163;
 
     public static String name(int token)
     {
@@ -308,6 +309,7 @@ public class Token
           case BINDNAME:        return "BINDNAME";
           case THROW:           return "THROW";
           case RETHROW:         return "RETHROW";
+          case THROWS:          return "THROWS";
           case IN:              return "IN";
           case INSTANCEOF:      return "INSTANCEOF";
           case LOCAL_LOAD:      return "LOCAL_LOAD";
