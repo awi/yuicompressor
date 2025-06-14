@@ -1,0 +1,1 @@
+function ajaxConvert(d,b,a){if(d!==true){if(d&&b.throws){a=d(a)}else{try{a=d(a)}catch(c){return{state:"parsererror",error:d?c:"No conversion from "+prev+" to "+current}}}}};

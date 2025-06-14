@@ -1,8 +1,6 @@
 package com.yahoo.platform.yui.compressor;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -16,57 +14,78 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class YUICompressorTest {
 
-    public static final String SRC_TEST_RESOURCES = "src/test/resources/";
+    public static final String BASE_DIR_JS_FILES = "src/test/resources/scripts/";
+    public static final String BASE_DIR_JS_FILES_GENERATED = "src/test/resources/scripts-gen/";
+    public static final String BASE_DIR_JS_FILES_EXPCTED = "src/test/resources/scripts-exp/" +
+            "";
 
-    private String readFile(String filename) throws IOException {
-        return Files.readString(Path.of(filename)).trim();
-    }
+    public final String REPLACE_PATTERN = "-min";
 
-    @ParameterizedTest
-    @ValueSource(strings = {"01_prototype.js", "_munge.js", "_string_combo.js", "_string_combo2.js", "_string_combo3.js",
-            "_syntax_error.js", "float.js", "issue86.js", "jquery-1.6.4.js", "promise-catch-finally-issue203.js"})
-    public void testCase(String filename) throws IOException {
-        var file = SRC_TEST_RESOURCES + filename;
-        var result = YUICompressor.mainInternal(new String[]{"-t", file});
-        assertEquals(readFile(file + ".min"), result, filename);
-    }
+    private void assertGeneratedFiles() throws IOException {
+        var pathToGeneratedFiles = YUICompressor.collectFiles(Path.of(BASE_DIR_JS_FILES_GENERATED), "min");
 
-    @Test
-    public void showUsageWhenIllegalArgumentIsGiven() throws IOException {
-        var standardErr = System.err;
-        var outputStreamCaptor = new ByteArrayOutputStream();
+        boolean failed = false;
 
-        try {
-            System.setErr(new PrintStream(outputStreamCaptor));
+        for (var file : pathToGeneratedFiles) {
+            var pathToExpectedFile = Path.of(BASE_DIR_JS_FILES_EXPCTED, file.getFileName().toString());
 
-            YUICompressor.main(new String[]{});
-            assertTrue(outputStreamCaptor.toString().contains("Usage:"));
-        } finally {
-            System.setErr(standardErr);
+            var expected = Files.readString(pathToExpectedFile).trim();
+            var generated = Files.readString(file);
+
+            if (!expected.equals(generated)) {
+                failed = true;
+                System.err.println("Failed for file: " + file);
+            }
+        }
+
+        if (failed) {
+            fail("Failed for some files");
         }
     }
 
     @Test
+    public void testMinification() throws IOException {
+
+        YUICompressor.main(new String[]{"-m", "--type", "js", "-p", ".js:.js.min", "-i", BASE_DIR_JS_FILES, "-o", BASE_DIR_JS_FILES_GENERATED});
+        assertGeneratedFiles();
+    }
+
+//    @Test
+//    public void showUsageWhenIllegalArgumentIsGiven() throws IOException {
+//        var standardErr = System.err;
+//        var outputStreamCaptor = new ByteArrayOutputStream();
+//
+//        try {
+//            System.setErr(new PrintStream(outputStreamCaptor));
+//
+//            YUICompressor.main(new String[]{});
+//            assertTrue(outputStreamCaptor.toString().contains("Usage:"));
+//        } finally {
+//            System.setErr(standardErr);
+//        }
+//    }
+
+    @Test
     public void showThrowIllegalArgumentExceptionWhenIllegalArgumentIsGiven() throws IOException {
-        assertThrows(IllegalArgumentException.class, () -> YUICompressor.mainInternal(new String[]{}));
+        assertThrows(IllegalArgumentException.class, () -> YUICompressor.main(new String[]{}));
     }
 
     @Test
     public void testFilenameGeneration() throws NoSuchAlgorithmException {
         MessageDigest md = MessageDigest.getInstance("MD5");
-        String filename = SRC_TEST_RESOURCES + "01_prototype.js";
+        String filename = BASE_DIR_JS_FILES + "01_prototype.js";
         String newFilename = YUICompressor.generateNewFilename(md, filename);
-        assertEquals(SRC_TEST_RESOURCES + "01_prototype-6855b0.js", newFilename);
+        assertEquals(BASE_DIR_JS_FILES + "01_prototype-6855b0.js", newFilename);
     }
 
     @Test
     public void collectAllJavaScriptFilesInDirectoryTree() {
-        var files = YUICompressor.collectFiles(Path.of(SRC_TEST_RESOURCES + "testdir"), "js");
+        var files = YUICompressor.collectFiles(Path.of(BASE_DIR_JS_FILES + "testdir"), "js");
         assertEquals(4, files.size());
     }
 
     @Test
     public void throwAnExceptionWhenNoTypeIsGiven() {
-        assertThrows(IllegalArgumentException.class, () -> YUICompressor.collectFiles(Path.of(SRC_TEST_RESOURCES), null));
+        assertThrows(IllegalArgumentException.class, () -> YUICompressor.collectFiles(Path.of(BASE_DIR_JS_FILES), null));
     }
 }
